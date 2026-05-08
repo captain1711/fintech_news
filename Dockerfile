@@ -7,7 +7,7 @@ COPY frontend/ .
 RUN npm run build
 
 # ---------- Backend ----------
-FROM python:3.11-slim AS backend
+FROM python:3.11-slim-bookworm AS backend
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 WORKDIR /app
