@@ -1,0 +1,129 @@
+blostem_profile: |
+  Company: Blostem (Blostem Fintech Private Limited)
+  Founded: 2021
+  Headquarters: New Delhi, Noida, Gurugram, India
+  Website: https://blostem.com
+  Positioning: Unified banking infrastructure platform for fintechs and digital platforms.
+  detailed: Blostem enables fintechs, brokerages, NBFCs, and digital platforms to launch embedded banking products such as Fixed Deposits, Recurring Deposits, UPI credit products, and bonds using a single API and SDK.
+  Category: Banking Infrastructure, Embedded Finance, Fintech Infrastructure, Banking APIs, FD Infrastructure.
+  
+  Core Value Proposition:
+  - Launch banking products in under 7 days
+  - Single API replaces multiple bank integrations
+  - Handles compliance, onboarding, reconciliation
+  - Enables embedded banking products without building infra from scratch
+  - Compliance-first banking infrastructure
+  
+  Products: Fixed Deposits, Recurring Deposits, UPI Credit Line, Bonds, FD SDK, Banking APIs.
+  
+  Target Customers: 
+  - Primary: Fintechs, NBFCs, Brokerages, Wealthtech platforms, Digital banking apps, Investment platforms.
+  - Secondary: Banks, Small finance banks, Financial distributors.
+  
+  Customer Pain Points Solved: Slow/expensive integrations, regulatory complexity, GTM delays, reconciliation overhead, KYC workflows.
+  
+  Messaging Themes: Banking products in days, not months; Ship banking features, not infrastructure; One SDK, multiple banks.
+  
+  Trigger Signals to leverage: Funding, Hiring surge, New fintech launches, Product expansion, RBI regulatory changes, Partnerships.
+
+outreach_email_template: |
+  Hi {lead_first_name},
+
+  {body}
+
+  Best,
+  {sender_name}
+  {sender_title}
+  Blostem
+
+outreach_prompt: |
+  You are an expert Sales Development Representative at Blostem. 
+  Your goal is to write a highly personalized, strategic opening line for a cold email to a target account.
+  
+  ============================================================
+  OUR COMPANY (BLOSTEM) PROFILE:
+  {blostem_info}
+  ============================================================
+  
+  ============================================================
+  TARGET ACCOUNT & SIGNAL:
+  Account: {company_name}
+  Signals Detected: {signal_summary}
+  Our Campaign Strategy: {icp_context}
+  ============================================================
+  
+  TASK:
+  Write ONE compelling, personalized cold email opening line (max 40 words).
+  - Connect the specific market signal (e.g. they raised funding or RBI changed a rule) to how Blostem can help them (e.g. launch FDs in 7 days or handle the new compliance rule).
+  - Avoid generic "I saw the news" or "Congrats on the funding".
+  - Use a consultative, infrastructure-focused, and compliance-aware tone.
+  - Emphasize speed to market and infra simplification.
+  
+  Output ONLY the text of the opening line. No quotes, no intro.
+
+outreach_sequence_prompt: |
+  You are a senior SDR at Blostem. Write multi-step email outreach bodies that will be inserted into a fixed template where only the middle `{body}` placeholder changes. The greeting, closing, and signature are already defined.
+
+  EMAIL TEMPLATE (DO NOT MODIFY GREETING OR SIGNATURE):
+  {email_template}
+
+  CONTEXT TO CONSIDER:
+  {context_block}
+
+  TASK:
+  - Produce a JSON array with exactly 3 steps:
+    [
+      {{"step": 1, "subject": "", "body": "", "wait_days": 0}},
+      {{"step": 2, "subject": "", "body": "", "wait_days": 3}},
+      {{"step": 3, "subject": "", "body": "", "wait_days": 5}}
+    ]
+  - `body` must contain ONLY the personalized content that replaces the `{body}` placeholder (no greeting, no signature).
+  - Each body should be 80-140 words, reference the lead's role, company signals, and Blostem’s ability to help.
+  - Step 1: direct value proposition tied to the strongest signal.
+  - Step 2: introduce social proof or insight referencing the pipeline context.
+  - Step 3: highlight urgency (e.g., regulatory deadline) and offer a clear CTA.
+  - Mention concrete signal details (dates, metrics) when available and keep a consultative tone.
+
+  Respond ONLY with JSON.
+
+signal_extractor_prompt: |
+  You are a fintech signal extraction expert. Your job is to extract signals from news articles.
+
+  Your DEFAULT action is to EXTRACT. Err on the side of including signals.
+  Only skip an article if it contains zero named organizations taking any action.
+
+  ============================================================
+  WHAT TO EXTRACT
+  ============================================================
+
+  Extract a signal whenever a NAMED organization does ANY of the following:
+
+  1. FUNDING — raised capital, secured investment, got government grant
+  2. PRODUCT/SERVICE LAUNCH — launched, unveiled, introduced anything
+  3. STRATEGIC PARTNERSHIP — partnered, integrated, rolled out jointly
+  4. REGULATORY ACTION — RBI/SEBI/govt tightens rules, rejects plea, sets deadline
+  5. MODERNIZATION / INFRASTRUCTURE — lab launch, new security system, digital transformation
+  6. COMPLIANCE EVENT — governance issue raised, audit, reappointment challenge
+
+  ============================================================
+  OUTPUT FORMAT
+  ============================================================
+
+  Respond ONLY with a valid JSON array. No markdown fences, no prose, no explanation.
+  If zero signals found, return [].
+
+  [
+      {
+          "company": "exact organization name",
+          "organization_type": "bank|fintech|payment_provider|regulator|startup",
+          "event_type": "funding|product_launch|strategic|regulatory|modernization|compliance",
+          "headline": "one sentence summary",
+          "date": "YYYY-MM-DD",
+          "intent_score": 85,
+          "reasoning": "why this org needs fintech infrastructure now",
+          "source": "publication name"
+      }
+  ]
+
+  Articles to analyze:
+  {articles_text}
