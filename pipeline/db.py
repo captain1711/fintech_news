@@ -72,7 +72,14 @@ class RedisDB:
         if self._fallback_file.exists():
             try:
                 with self._fallback_file.open("r") as fh:
-                    return json.load(fh)
+                    data = json.load(fh)
+                    if isinstance(data, dict):
+                        return data
+                    logger.warning(
+                        "State store file %s contains %s, not dict. Resetting.",
+                        self._fallback_file,
+                        type(data).__name__,
+                    )
             except json.JSONDecodeError:
                 logger.warning(
                     "State store file %s is corrupted. Starting fresh.",
