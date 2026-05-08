@@ -1,6 +1,8 @@
 import type { Account, Alert, PipelineStatus, ICPConfig, ProspectPool, ProspectPoolRun, Contact, OutreachSequenceStep } from "@/types/api";
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? "http://localhost:8000" : window.location.origin);
 
 async function request<T>(path: string, options?: RequestInit) {
   const url = new URL(`${API_BASE_URL}${path}`);

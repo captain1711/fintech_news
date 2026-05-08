@@ -499,13 +499,9 @@ async def startup_event():
 
 @app.get("/prospect-pools")
 def list_prospect_pools():
-    return [{
-        "id": "demo-pool-1",
-        "name": "Fintech Infrastructure Growth - Q2",
-        "icp": {"industries": ["Fintech"], "size": "Growth", "geos": ["India"], "signals": ["Funding"], "pain": "Scalability", "daysBack": 30},
-        "execution_ids": ["demo-exec-1"],
-        "created_at": "2026-05-01T10:00:00Z"
-    }]
+    state = get_full_state()
+    pools = list(state.get("prospect_pools", {}).values())
+    return sorted(pools, key=lambda p: p.get("created_at", ""), reverse=True)
 
 
 @app.post("/prospect-pools")
@@ -525,59 +521,20 @@ def create_prospect_pool(pool: ProspectPoolCreate):
 
 @app.get("/prospect-pools/{pool_id}/executions")
 def list_executions(pool_id: str):
-    return [{
-        "id": "demo-exec-1",
-        "prospect_pool_id": pool_id,
-        "status": "completed",
-        "execution_date": "2026-05-08T18:00:00Z",
-        "articles_scanned": 124,
-        "signals_extracted": 42,
-        "accounts_found": 12
-    }]
+    state = get_full_state()
+    pool = state.get("prospect_pools", {}).get(pool_id)
+    if not pool:
+        raise HTTPException(status_code=404, detail="Prospect pool not found")
+    return [state.get("executions", {}).get(eid) for eid in pool.get("execution_ids", []) if eid in state.get("executions", {})]
 
 
 @app.get("/prospect-pools/{pool_id}/executions/{execution_id}/accounts")
 def list_execution_accounts(pool_id: str, execution_id: str):
-    return [
-        {
-            "id": "razorpay",
-            "prospectPoolId": pool_id,
-            "executionId": execution_id,
-            "name": "Razorpay",
-            "domain": "razorpay.com",
-            "industry": "Fintech",
-            "score": 98,
-            "priority": "Hot",
-            "signalsCount": 3,
-            "whyNow": "Expansion into payroll and neo-banking infrastructure after $200M round.",
-            "aiInsight": "Razorpay is perfectly positioned for their next growth phase.",
-            "suggestedAction": "Focus on IPO readiness treasury tools.",
-            "outreachStatus": "approved",
-            "signals": [{"id": "s1", "type": "Funding", "description": "Secondary round for IPO readiness", "date": "2026-05-05"}],
-            "selectedLead": {
-                "lead": {"id": "l1", "name": "Shashank Kumar", "title": "Co-Founder & CTO", "company": "Razorpay", "email": "shashank@razorpay.com", "linkedin": "https://linkedin.com/in/shashank", "location": "Bengaluru, India"},
-                "role": "CTO"
-            },
-            "outreachSequence": [{"step": 1, "subject": "Infrastructure for Razorpay", "body": "Hi Shashank, Congrats on the round! Let's talk scale.", "waitDays": 0}]
-        },
-        {
-            "id": "slice",
-            "prospectPoolId": pool_id,
-            "executionId": execution_id,
-            "name": "Slice",
-            "domain": "sliceit.com",
-            "industry": "Fintech",
-            "size": "Unicorn",
-            "score": 91,
-            "priority": "Hot",
-            "signalsCount": 2,
-            "whyNow": "New 'Reserve' credit line launch requires ledger scaling.",
-            "aiInsight": "Slice is scaling fast in consumer credit.",
-            "suggestedAction": "Pitch ledger scaling solutions.",
-            "outreachStatus": "pending",
-            "signals": [{"id": "s2", "type": "Product Launch", "description": "Launch of credit line for Gen-Z", "date": "2026-05-07"}]
-        }
-    ]
+    state = get_full_state()
+    execution = state.get("executions", {}).get(execution_id)
+    if not execution or execution["prospect_pool_id"] != pool_id:
+        raise HTTPException(status_code=404, detail="Execution not found for this pool")
+    return build_accounts_payload(execution_id)
 
 
 @app.get("/prospect-pools/{pool_id}/executions/{execution_id}/accounts/{account_id}")
