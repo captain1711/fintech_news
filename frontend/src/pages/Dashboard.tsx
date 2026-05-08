@@ -1,9 +1,8 @@
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Flame, TrendingUp, Building2, ChevronDown, Activity, Mail, Zap, Newspaper } from "lucide-react";
+import { ArrowUpRight, Flame, TrendingUp, Building2, ChevronDown, Activity, Mail, Zap, Newspaper, Search, FileText, Sparkles, BarChart3, Send, CheckCircle2, Loader2, Circle, XCircle } from "lucide-react";
 import { fetchAccounts, fetchExecutionStatus, fetchAlerts } from "@/lib/api";
-import type { Account, Alert } from "@/types/api";
+import type { Account } from "@/types/api";
 import { PriorityBadge, ScoreBar } from "@/components/dashboard/PriorityBadge";
 import { cn } from "@/lib/utils";
 import { useProspectPool } from "@/context/ProspectPoolContext";
@@ -27,7 +26,7 @@ export default function Dashboard() {
     refetchInterval: isLive ? 2000 : false,
   });
 
-  const { data: alerts = [] } = useQuery({
+  useQuery({
     queryKey: ["alerts"],
     queryFn: fetchAlerts,
     refetchInterval: 10000,
@@ -35,8 +34,57 @@ export default function Dashboard() {
 
   const executionStatus = executionStatusQuery.data;
   const companies: Account[] = accounts;
-  const signalFeed: Alert[] = alerts;
   const top5 = companies.slice(0, 5);
+  const agentMetrics = executionStatus?.agentMetrics || {};
+  const completedAgents = Object.keys(agentMetrics).length;
+  const currentStageIndex = currentExecution?.status === "completed"
+    ? 5
+    : currentExecution?.status === "failed"
+      ? Math.min(completedAgents, 4)
+      : Math.min(completedAgents, 4);
+  const latestPipelineMessage = executionStatus?.messages?.at(-1) || (
+    currentExecution?.status === "running"
+      ? "Agents are starting the prospect intelligence run."
+      : "Start a prospect pool run to generate live pipeline updates."
+  );
+
+  const pipelineStages = [
+    {
+      key: "researcher_agent",
+      label: "Research",
+      detail: "Collects market news and regulatory signals",
+      value: `${executionStatus?.articlesScanned || currentExecution?.articles_scanned || 0} articles`,
+      icon: Search,
+    },
+    {
+      key: "extractor_agent",
+      label: "Extract",
+      detail: "Turns articles into structured why-now events",
+      value: `${executionStatus?.totalSignals || currentExecution?.signals_extracted || 0} signals`,
+      icon: FileText,
+    },
+    {
+      key: "enricher_agent",
+      label: "Enrich",
+      detail: "Builds company context and account profiles",
+      value: `${companies.length || currentExecution?.accounts_found || 0} profiles`,
+      icon: Sparkles,
+    },
+    {
+      key: "scorer_agent",
+      label: "Score",
+      detail: "Ranks accounts by urgency and fit",
+      value: `${companies.filter((c) => c.priority === "Hot").length} hot`,
+      icon: BarChart3,
+    },
+    {
+      key: "outreach_agent",
+      label: "Outreach",
+      detail: "Drafts personalized email angles",
+      value: `${companies.filter((c) => c.outreachDraft).length} drafts`,
+      icon: Send,
+    },
+  ];
 
   const stats = [
     { label: "Hot accounts", value: companies.filter((c: Account) => c.priority === "Hot").length, icon: Flame, tone: "text-red-500" },
@@ -113,6 +161,79 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-5">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Live Agent Pipeline</h2>
+            <p className="text-xs text-slate-500 mt-1">{latestPipelineMessage}</p>
+          </div>
+          <div className={cn(
+            "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest",
+            currentExecution?.status === "running" ? "bg-blue-50 text-blue-700" :
+            currentExecution?.status === "failed" ? "bg-red-50 text-red-700" :
+            "bg-green-50 text-green-700"
+          )}>
+            {currentExecution?.status === "running" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {currentExecution?.status === "failed" && <XCircle className="h-3.5 w-3.5" />}
+            {currentExecution?.status === "completed" && <CheckCircle2 className="h-3.5 w-3.5" />}
+            {currentExecution?.status || "waiting"}
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {pipelineStages.map((stage, index) => {
+            const isDone = Boolean(agentMetrics[stage.key]) || currentExecution?.status === "completed";
+            const isActive = currentExecution?.status === "running" && index === currentStageIndex;
+            const isFailed = currentExecution?.status === "failed" && index === currentStageIndex;
+            const StageIcon = stage.icon;
+
+            return (
+              <div
+                key={stage.key}
+                className={cn(
+                  "rounded-xl border p-4 min-h-[172px] transition-colors flex flex-col",
+                  isActive ? "border-blue-300 bg-blue-50/70" :
+                  isFailed ? "border-red-200 bg-red-50/70" :
+                  isDone ? "border-green-200 bg-green-50/40" :
+                  "border-slate-200 bg-slate-50/60"
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className={cn(
+                    "h-9 w-9 rounded-lg flex items-center justify-center",
+                    isActive ? "bg-blue-600 text-white" :
+                    isFailed ? "bg-red-600 text-white" :
+                    isDone ? "bg-green-600 text-white" :
+                    "bg-white text-slate-400 border border-slate-200"
+                  )}>
+                    <StageIcon className="h-4 w-4" />
+                  </div>
+                  {isActive ? (
+                    <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+                  ) : isFailed ? (
+                    <XCircle className="h-4 w-4 text-red-600" />
+                  ) : isDone ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Circle className="h-4 w-4 text-slate-300" />
+                  )}
+                </div>
+                <div className="mt-4 flex-1">
+                  <div className="text-sm font-bold text-slate-900">{stage.label}</div>
+                  <div className="text-[11px] text-slate-500 leading-5 mt-1 break-words">{stage.detail}</div>
+                </div>
+                <div className="mt-4 pt-3 border-t border-slate-200/70 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Step {index + 1}/5
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-700 text-right tabular-nums">{stage.value}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <div className="flex items-center justify-between">
         <div>

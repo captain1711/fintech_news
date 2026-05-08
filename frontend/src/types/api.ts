@@ -96,6 +96,12 @@ export interface PipelineStatus {
   totalSignals: number;
   articlesScanned?: number;
   messages: string[];
+  agentMetrics?: Record<string, {
+    started_at?: string;
+    finished_at?: string;
+    duration_seconds?: number;
+    last_message?: string;
+  }>;
 }
 
 export interface ICPConfig {
