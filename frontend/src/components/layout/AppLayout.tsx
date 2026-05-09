@@ -179,7 +179,9 @@ export default function AppLayout() {
         </header>
         
         <main className="flex-1 overflow-auto">
-          <div className="container mx-auto pb-12">
+          <div className={cn(
+            pathname.startsWith("/emails") ? "w-full pb-0" : "container mx-auto pb-12"
+          )}>
             <Outlet />
           </div>
         </main>

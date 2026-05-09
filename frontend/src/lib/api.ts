@@ -104,3 +104,11 @@ export function generateOutreachSequence(poolId: string, executionId: string, ac
     body: JSON.stringify(payload),
   });
 }
+
+export function saveOutreachSequence(poolId: string, executionId: string, accountId: string, sequence: OutreachSequenceStep[]) {
+  return request<{ sequence: OutreachSequenceStep[] }>(`/prospect-pools/${poolId}/executions/${executionId}/accounts/${accountId}/sequence`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sequence }),
+  });
+}

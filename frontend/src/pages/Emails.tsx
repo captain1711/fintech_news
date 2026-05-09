@@ -5,6 +5,7 @@ import {
   fetchOutreach,
   fetchContacts,
   generateOutreachSequence,
+  saveOutreachSequence,
 } from "@/lib/api";
 import { useProspectPool } from "@/context/ProspectPoolContext";
 import type { Account, Contact, OutreachSequenceStep } from "@/types/api";
@@ -26,6 +27,7 @@ import {
   ExternalLink,
   Phone,
   Filter,
+  Pencil,
 } from "lucide-react";
 import { PriorityBadge } from "@/components/dashboard/PriorityBadge";
 
@@ -54,6 +56,11 @@ export default function Emails() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [sequenceDrafts, setSequenceDrafts] = useState<SequenceState>({});
+  const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
+  const [pendingSequenceSave, setPendingSequenceSave] = useState<{
+    accountId: string;
+    sequence: OutreachSequenceStep[];
+  } | null>(null);
   const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
 
   const {
@@ -100,7 +107,8 @@ export default function Emails() {
         selectedAccountId!,
         selectedRole,
       ),
-    enabled: !!selectedAccountId && !!selectedExecutionId && !!selectedProspectPoolId,
+    enabled: false,
+    retry: false,
   });
 
   const contacts: Contact[] = contactsData?.contacts ?? [];
@@ -110,6 +118,10 @@ export default function Emails() {
       setSelectedLeadId(contacts[0].id);
     }
   }, [contacts, selectedLeadId]);
+
+  useEffect(() => {
+    setSelectedLeadId(null);
+  }, [selectedAccountId, selectedRole]);
 
   const activeLead = contacts.find((c) => c.id === selectedLeadId) || currentAccount?.selectedLead?.lead || null;
 
@@ -134,12 +146,73 @@ export default function Emails() {
     },
   });
 
+  const saveSequenceMutation = useMutation({
+    mutationFn: ({ accountId, sequence }: { accountId: string; sequence: OutreachSequenceStep[] }) =>
+      saveOutreachSequence(selectedProspectPoolId!, selectedExecutionId!, accountId, sequence),
+    onSuccess: (data, variables) => {
+      setSequenceDrafts((prev) => ({
+        ...prev,
+        [variables.accountId]: data.sequence,
+      }));
+    },
+    onError: () => {
+      toast.error("Unable to save sequence edits");
+    },
+  });
+
+  useEffect(() => {
+    if (!pendingSequenceSave || !selectedProspectPoolId || !selectedExecutionId) return;
+
+    const timeout = window.setTimeout(() => {
+      saveSequenceMutation.mutate(pendingSequenceSave);
+      setPendingSequenceSave(null);
+    }, 700);
+
+    return () => window.clearTimeout(timeout);
+  }, [pendingSequenceSave, selectedProspectPoolId, selectedExecutionId]);
+
   const toggleAccountSelection = (id: string) => {
     setSelectedAccounts((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
+    });
+  };
+
+  const handleFetchContacts = async () => {
+    if (!selectedAccountId || !selectedExecutionId || !selectedProspectPoolId) return;
+
+    const result = await refetchContacts();
+    if (result.error) {
+      toast.error("Unable to fetch contacts from RocketReach");
+      return;
+    }
+
+    const fetchedContacts = result.data?.contacts ?? [];
+    if (fetchedContacts.length === 0) {
+      toast.info("No contacts found for this company and role");
+      return;
+    }
+
+    setSelectedLeadId(fetchedContacts[0].id);
+    toast.success("Contacts fetched");
+  };
+
+  const updateSequenceStep = (idx: number, updates: Partial<OutreachSequenceStep>) => {
+    if (!selectedAccountId) return;
+
+    const nextSequence = currentSequence.map((step, stepIdx) => (
+      stepIdx === idx ? { ...step, ...updates } : step
+    ));
+
+    setSequenceDrafts((prev) => ({
+      ...prev,
+      [selectedAccountId]: nextSequence,
+    }));
+    setPendingSequenceSave({
+      accountId: selectedAccountId,
+      sequence: nextSequence,
     });
   };
 
@@ -269,11 +342,13 @@ export default function Emails() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => refetchContacts()}
-              className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all border border-slate-100"
-              title="Refresh Contacts"
+              onClick={handleFetchContacts}
+              disabled={!selectedAccountId || !selectedExecutionId || !selectedProspectPoolId || isContactsLoading}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-50 text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-all border border-slate-100 text-xs font-bold disabled:opacity-50"
+              title="Fetch RocketReach contacts for the selected company and role"
             >
-              <RefreshCw className={cn("h-4 w-4", isContactsLoading && "animate-spin")} />
+              <RefreshCw className={cn("h-3 w-3", isContactsLoading && "animate-spin")} />
+              Fetch Contact
             </button>
             <button 
               onClick={() => {
@@ -303,27 +378,86 @@ export default function Emails() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-0">
                 {currentSequence.map((step, idx) => (
-                  <div key={idx} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in" style={{ animationDelay: `${idx * 0.1}s` }}>
-                    <div className="px-6 py-4 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="h-6 w-6 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-black">
-                          {idx + 1}
-                        </span>
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step {idx + 1}</span>
-                          <div className="text-sm font-bold text-slate-900">{step.subject}</div>
+                  <div key={idx} className="animate-fade-in" style={{ animationDelay: `${idx * 0.1}s` }}>
+                    {idx > 0 && (
+                      <div className="flex items-center gap-4 py-6">
+                        <div className="h-px flex-1 bg-slate-200" />
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          <Clock className="h-3 w-3" />
+                          Wait {step.wait_days || step.waitDays} days
+                        </div>
+                        <div className="h-px flex-1 bg-slate-200" />
+                      </div>
+                    )}
+                    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="px-6 py-4 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="h-6 w-6 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-black">
+                            {idx + 1}
+                          </span>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email {idx + 1}</span>
+                            <div className="text-sm font-bold text-slate-900">{step.subject}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-[10px] font-bold text-slate-400">
+                            {idx === 0 ? "Send now" : `Follow-up ${idx}`}
+                          </div>
+                          <button
+                            onClick={() => setEditingStepIndex(editingStepIndex === idx ? null : idx)}
+                            className={cn(
+                              "h-8 w-8 rounded-lg border flex items-center justify-center transition-colors",
+                              editingStepIndex === idx
+                                ? "border-blue-200 bg-blue-50 text-blue-600"
+                                : "border-slate-200 bg-white text-slate-400 hover:text-blue-600 hover:border-blue-200"
+                            )}
+                            title="Edit email"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
-                        <Clock className="h-3 w-3" />
-                        Wait {step.wait_days || step.waitDays} days
-                      </div>
-                    </div>
-                    <div className="p-6">
-                      <div className="text-sm font-medium text-slate-600 leading-relaxed whitespace-pre-wrap">
-                        {step.body}
+                      <div className="p-6">
+                        {editingStepIndex === idx ? (
+                          <div className="space-y-4">
+                            <div>
+                              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                Subject
+                              </label>
+                              <input
+                                value={step.subject}
+                                onChange={(event) => updateSequenceStep(idx, { subject: event.target.value })}
+                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                Body
+                              </label>
+                              <textarea
+                                value={step.body}
+                                onChange={(event) => updateSequenceStep(idx, { body: event.target.value })}
+                                rows={10}
+                                className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-relaxed text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                              />
+                              <div className="mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                {saveSequenceMutation.isPending ? "Saving edits" : "Autosaved"}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="mb-4 text-sm font-bold text-slate-900">
+                              Subject: {step.subject}
+                            </div>
+                            <div className="text-sm font-medium text-slate-600 leading-relaxed whitespace-pre-wrap">
+                              {step.body}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -362,7 +496,13 @@ export default function Emails() {
                     <div className="text-xs font-bold text-slate-900 truncate">{contact.name}</div>
                     <div className="text-[10px] font-semibold text-slate-500 truncate mt-0.5">{contact.title}</div>
                   </div>
-                  {contact.email && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 ml-2" />}
+                  {contact.email && (
+                    contact.email_verified || contact.emailVerified ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 ml-2" />
+                    ) : (
+                      <Mail className="h-3.5 w-3.5 text-amber-500 shrink-0 ml-2" />
+                    )
+                  )}
                 </div>
               </div>
             ))}
@@ -404,11 +544,16 @@ export default function Emails() {
                   {activeLead.email && (
                     <div className="p-3 rounded-xl bg-white border border-slate-200 text-xs">
                       <div className="flex items-center gap-3">
-                        <div className="h-7 w-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                        <div className={cn(
+                          "h-7 w-7 rounded-lg flex items-center justify-center",
+                          activeLead.email_verified || activeLead.emailVerified ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                        )}>
                           <Mail className="h-4 w-4" />
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email</span>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            Email
+                          </span>
                           <span className="font-bold text-slate-700 truncate max-w-[150px]">{activeLead.email}</span>
                         </div>
                       </div>

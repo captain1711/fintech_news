@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 import yaml
+import requests
 
 from pipeline.db import db
 from pipeline.swarm.manager import SwarmManager
@@ -110,6 +111,10 @@ class OutreachSequenceRequest(BaseModel):
     custom_sequence: Optional[List[Dict[str, Any]]] = None
 
 
+class OutreachSequenceUpdate(BaseModel):
+    sequence: List[Dict[str, Any]]
+
+
 class AlertSubscribeRequest(BaseModel):
     email: str
 
@@ -153,9 +158,10 @@ EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _build_sequence_prompt(context: Dict[str, Any]) -> str:
-    return SEQUENCE_PROMPT_TEMPLATE.format(
-        context_block=json.dumps(context, indent=2),
-        email_template=_escape_prompt_text(EMAIL_TEMPLATE),
+    return (
+        SEQUENCE_PROMPT_TEMPLATE
+        .replace("{context_block}", json.dumps(context, indent=2))
+        .replace("{email_template}", EMAIL_TEMPLATE)
     )
 
 
@@ -563,12 +569,24 @@ def get_account_contacts(pool_id: str, execution_id: str, account_id: str, role:
         contacts = rocketreach_client.search_contacts(
             company=account["name"],
             role=role,
+            domain=account.get("domain", ""),
             limit=min(limit, 10),
         )
         _cache_contacts_snapshot(execution_id, account_id, role, contacts)
     except ValueError as exc:
         logger.warning("RocketReach validation error: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc))
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 502
+        detail = "Unable to fetch contacts from RocketReach"
+        if exc.response is not None:
+            try:
+                payload = exc.response.json()
+                detail = payload.get("detail") or payload.get("error") or detail
+            except ValueError:
+                detail = exc.response.text or detail
+        logger.exception("RocketReach contact lookup failed: %s", exc)
+        raise HTTPException(status_code=status_code, detail=detail)
     except Exception as exc:
         logger.exception("RocketReach contact lookup failed: %s", exc)
         raise HTTPException(status_code=502, detail="Unable to fetch contacts from RocketReach")
@@ -598,6 +616,21 @@ def upsert_outreach_sequence(pool_id: str, execution_id: str, account_id: str, r
     _store_outreach_sequence(state, execution_id, account_id, sequence, request.lead, request.role)
     save_full_state(state)
     return {"sequence": sequence}
+
+
+@app.patch("/prospect-pools/{pool_id}/executions/{execution_id}/accounts/{account_id}/sequence")
+def update_outreach_sequence(pool_id: str, execution_id: str, account_id: str, request: OutreachSequenceUpdate):
+    get_account(pool_id, execution_id, account_id)
+    state = get_full_state()
+    execution = state["executions"].get(execution_id)
+    if not execution or execution["prospect_pool_id"] != pool_id:
+        raise HTTPException(status_code=404, detail="Execution not found for this pool")
+
+    execution.setdefault("results", {})
+    sequences = execution["results"].setdefault("outreach_sequences", {})
+    sequences[account_id] = request.sequence
+    save_full_state(state)
+    return {"sequence": request.sequence}
 
 
 @app.get("/prospect-pools/{pool_id}/executions/{execution_id}/status")
@@ -781,8 +814,11 @@ def _generate_outreach_sequence(account: Dict, lead: Dict, role: str, signals: L
 
 def _parse_sequence_response(raw: str) -> List[Dict]:
     cleaned = raw.strip().strip("`").strip()
+    json_candidate = _extract_json_array(cleaned)
+    if json_candidate:
+        cleaned = json_candidate
     try:
-        data = json.loads(cleaned)
+        data = json.loads(cleaned.replace("{{", "{").replace("}}", "}"))
         steps = []
         for idx, item in enumerate(data):
             steps.append({
@@ -806,6 +842,14 @@ def _parse_sequence_response(raw: str) -> List[Dict]:
             "wait_days": 0 if idx == 0 else 2 * idx,
         })
     return steps or [{"step": 1, "subject": "Checking in", "body": cleaned, "wait_days": 0}]
+
+
+def _extract_json_array(value: str) -> Optional[str]:
+    start = value.find("[")
+    end = value.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return value[start:end + 1]
 
 
 def _store_outreach_sequence(state: Dict, execution_id: str, account_id: str, sequence: List[Dict], lead: Dict, role: str):
